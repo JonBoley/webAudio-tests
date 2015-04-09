@@ -1,35 +1,132 @@
 <!DOCTYPE html>
 <html>
+<head>
+<script>
+var angle = 0;
+var angleIncrement = 10; // degrees
+</script>
+</head>
 <body>
 
 <a href="https://github.com/Jon2980/webAudio-tests"><img style="position: absolute; top: 0; right: 0; border: 0;" src="https://github-camo.global.ssl.fastly.net/38ef81f8aca64bb9a64448d0d70f1308ef5341ab/68747470733a2f2f73332e616d617a6f6e6177732e636f6d2f6769746875622f726962626f6e732f666f726b6d655f72696768745f6461726b626c75655f3132313632312e706e67" alt="Fork me on GitHub" data-canonical-src="https://s3.amazonaws.com/github/ribbons/forkme_right_darkblue_121621.png"></a>
 
 <p>This page is used to test various web audio functionalities</p>
 
+
 <div>
-<p>This button will play a sound, then redirect to a new page when done.</p>
-<button onclick="playSound()" type="button">Play Sound</button>
+<p>This let's you listen to my head-related transfer functions:</p>
+<p>
+<button id="myBtn" onclick="playSound()" type="button">Play/Stop</button>
+</p>
 
-<audio id="audio1">
-  <source src="media/horse.ogg" type="audio/ogg">
-  <source src="media/horse.mp3" type="audio/mpeg">
-Your browser does not support the audio element.
-</audio>
-<br> 
+<input id="rangeValue1" type="text" size="2" value="0" onchange="setAngle(this.value);"/>°
 
-<script> 
-var mySound=document.getElementById("audio1"); 
-  
-mySound.addEventListener("ended",function() {
-        window.location.assign("thanks.html")
-    });
+<p>
+0°
+<input id="slider1" type="range" value="0" min="0" max="350" step="10" class="HRTF_angle" onchange="setAngle(this.value);"/>
+360°
+</p>
+
+<script>
+// disable audio playback until HRTFs have loaded
+document.getElementById("myBtn").disabled = true;
+</script>
+<script src="boley_hrtfs.js"></script>
+<script>
+window.AudioContext = window.AudioContext || window.webkitAudioContext;
+var audioContext = new AudioContext();
+
+var bufferSize = 2 * audioContext.sampleRate,
+    noiseBuffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate),
+    output = noiseBuffer.getChannelData(0);
+for (var i = 0; i < bufferSize; i++) {
+    output[i] = Math.random() * 2 - 1;
+}
+
+// note: we will have to create a new source every time we need to play
+var whiteNoiseSource = audioContext.createBufferSource();
+whiteNoiseSource.buffer = noiseBuffer;
+whiteNoiseSource.loop = true;
+
+//console.log(data);
+
+if (data.samplingRate_Hz != audioContext.sampleRate){
+  console.log('Warning: Sampling rates do not match');
+  }
+
+// load HRTFs
+for(var i_angle = 0; i_angle < data.HRTFs.length; i_angle++){
+	var buffer = audioContext.createBuffer(2, data.samplingRate_Hz, data.samplingRate_Hz);
+	var bufferChannelLeft = buffer.getChannelData(0);
+	var bufferChannelRight = buffer.getChannelData(1);
+	for(var i_sample = 0; i_sample < data.HRTFs[i_angle].HRIR_left.length; i_sample++){
+		bufferChannelLeft[i_sample] = data.HRTFs[i_angle].HRIR_left[i_sample];
+	}
+	for(var i_sample = 0; i_sample < data.HRTFs[i_angle].HRIR_right.length; i_sample++){
+		bufferChannelRight[i_sample] = data.HRTFs[i_angle].HRIR_right[i_sample];
+	}
+	data.HRTFs[i_angle].buffer = buffer;
+}
+
+
+document.getElementById("myBtn").disabled = false;
+
+// Make a convolver node for the HRTF
+var convolver = audioContext.createConvolver();
+convolver.buffer = data.HRTFs[0].buffer;
+
+// Connect the graph.
+convolver.connect(audioContext.destination);
+
+isPlaying = false;
+
+function setAngle(newAngle)
+  {
+  // use nearest HRTF
+  angle = Math.round(newAngle/angleIncrement)*angleIncrement;
+  printValue('slider1','rangeValue1',angle);
+  updateHRTF(angle);
+  return angle;
+  }
+function printValue(sliderID, textbox, angle)
+  {
+  var x = document.getElementById(textbox);
+  var y = document.getElementById(sliderID);
+  x.value = angle;
+  y.value = angle;
+  }
+
+
+function updateHRTF(angle)
+  {
+  // note: you may hear a click when switching.
+  // if/when we want to get fancy, we may be able
+  // to reduce clicking by slowly changing the
+  // contents of the buffer
+  convolver.buffer = data.HRTFs[Math.round(angle/angleIncrement)].buffer;
+  }
 
 function playSound()
-  { 
-  mySound.play(); 
-  } 
-</script> 
+  {
+  if (isPlaying){
+    this.source.stop(0);
+    isPlaying = false;
+    }
+  else{
+    var whiteNoiseSource = audioContext.createBufferSource();
+    this.source = whiteNoiseSource;
+	whiteNoiseSource.buffer = noiseBuffer;
+    whiteNoiseSource.loop = true;
+    whiteNoiseSource.connect(convolver);
+    whiteNoiseSource.start(0);
+    isPlaying = true;
+    }
+  }
+
+
+</script>
 </div>
+
 
 
 </body>
