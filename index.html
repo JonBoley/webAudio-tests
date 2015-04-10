@@ -17,15 +17,15 @@ var angleIncrement = 10; // degrees
 <p>This let's you listen to my head-related transfer functions:</p>
 <p>
 <button id="myBtn" onclick="playSound()" type="button">Play/Stop</button>
-<input id="rangeValue1" type="text" size="2" value="0" onchange="setAngle(this.value);"/>°
+<input id="rangeValue1" type="text" size="2" value="0" onchange="setAngle(this.value);"/>&deg;
 <input id="checkAutoRotate" type="checkbox" onchange="doAutoRotation(this.checked);">Auto Rotate
 </p>
 
 
 <p>
-0°
+0&deg;
 <input id="slider1" type="range" value="0" min="0" max="350" step="10" class="HRTF_angle" onchange="setAngle(this.value);"/>
-360°
+360&deg;
 </p>
 
 <script>
