@@ -17,14 +17,15 @@ var angleIncrement = 10; // degrees
 <p>This let's you listen to my head-related transfer functions:</p>
 <p>
 <button id="myBtn" onclick="playSound()" type="button">Play/Stop</button>
+<input id="rangeValue1" type="text" size="2" value="0" onchange="setAngle(this.value);"/>°
+<input id="checkAutoRotate" type="checkbox" onchange="doAutoRotation(this.checked);">Auto Rotate
 </p>
 
-<input id="rangeValue1" type="text" size="2" value="0" onchange="setAngle(this.value);"/>Â°
 
 <p>
-0Â°
+0°
 <input id="slider1" type="range" value="0" min="0" max="350" step="10" class="HRTF_angle" onchange="setAngle(this.value);"/>
-360Â°
+360°
 </p>
 
 <script>
@@ -79,6 +80,17 @@ convolver.buffer = data.HRTFs[0].buffer;
 convolver.connect(audioContext.destination);
 
 isPlaying = false;
+
+var timerID;
+function doAutoRotation(isEnabled)
+  {
+  if (isEnabled){
+    timerID = setInterval(function () {setAngle((angle+angleIncrement)%360)}, 100);
+    }
+  else{
+    clearInterval(timerID);
+    }
+  }
 
 function setAngle(newAngle)
   {
