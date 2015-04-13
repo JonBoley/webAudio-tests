@@ -4,6 +4,7 @@
 <script>
 var angle = 0;
 var angleIncrement = 10; // degrees
+var DEBUG = false;
 </script>
 </head>
 <body>
@@ -36,18 +37,27 @@ document.getElementById("myBtn").disabled = true;
 <script>
 window.AudioContext = window.AudioContext || window.webkitAudioContext;
 var audioContext = new AudioContext();
+if (DEBUG){console.log('1) Fs= '+audioContext.sampleRate);}
 
-var bufferSize = 2 * audioContext.sampleRate,
-    noiseBuffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate),
+var bufferSize = 2 * data.samplingRate_Hz,
+    noiseBuffer = audioContext.createBuffer(1, bufferSize, data.samplingRate_Hz),
     output = noiseBuffer.getChannelData(0);
 for (var i = 0; i < bufferSize; i++) {
     output[i] = Math.random() * 2 - 1;
 }
 
 // note: we will have to create a new source every time we need to play
-var whiteNoiseSource = audioContext.createBufferSource();
-whiteNoiseSource.buffer = noiseBuffer;
-whiteNoiseSource.loop = true;
+// using two sources, we will alternate with cross-fading
+var noiseSourceNode1 = audioContext.createBufferSource();
+noiseSourceNode1.buffer = noiseBuffer;
+noiseSourceNode1.loop = true;
+this.source1 = noiseSourceNode1;
+var noiseSourceNode2 = audioContext.createBufferSource();
+noiseSourceNode2.buffer = noiseBuffer;
+noiseSourceNode2.loop = true;
+this.source2 = noiseSourceNode2;
+
+if (DEBUG){console.log('2) Fs= '+audioContext.sampleRate);}
 
 //console.log(data);
 
@@ -69,39 +79,60 @@ for(var i_angle = 0; i_angle < data.HRTFs.length; i_angle++){
 	data.HRTFs[i_angle].buffer = buffer;
 }
 
+if (DEBUG){console.log('3) Fs= '+audioContext.sampleRate);}
 
 document.getElementById("myBtn").disabled = false;
 
-// Make a convolver node for the HRTF
-var convolver = audioContext.createConvolver();
-convolver.buffer = data.HRTFs[0].buffer;
+// Make two convolver nodes for the HRTF (we will alternate)
+var convolverIndex = 1;
+var convolverNode1 = audioContext.createConvolver();
+var convolverNode2 = audioContext.createConvolver();
+convolverNode1.buffer = data.HRTFs[0].buffer;
+convolverNode2.buffer = data.HRTFs[0].buffer;
+
+if (DEBUG){console.log('4) Fs= '+audioContext.sampleRate);}
+
+// Add some gain
+var gainNode1 = audioContext.createGain();
+var gainNode2 = audioContext.createGain();
 
 // Connect the graph.
-convolver.connect(audioContext.destination);
+// source1 - convolver1 - gain1 -
+//                               \
+// source2 - convolver2 - gain2 - destination
+convolverNode1.connect(gainNode1);
+convolverNode2.connect(gainNode2);
+gainNode1.connect(audioContext.destination);
+gainNode2.connect(audioContext.destination);
 
-isPlaying = false;
+var isPlaying1 = false;
+var isPlaying2 = false;
+var fadeTime = 50; //ms
+var fadeStepSize = 0.1;
+var fadeTimeConstant = fadeTime*fadeStepSize;
+var timerID_rotation, timerID_fadeIn, timerID_fadeOut;
 
-var timerID;
+var rotationTimeConstant = 200; //ms
 function doAutoRotation(isEnabled)
   {
   if (isEnabled){
-    timerID = setInterval(function () {setAngle((angle+angleIncrement)%360)}, 100);
+    timerID_rotation = setInterval(function () {
+      setAngle((angle+angleIncrement)%360)
+      }, rotationTimeConstant);
     }
   else{
-    clearInterval(timerID);
+    clearInterval(timerID_rotation);
     }
   }
 
-function setAngle(newAngle)
-  {
+function setAngle(newAngle) {
   // use nearest HRTF
   angle = Math.round(newAngle/angleIncrement)*angleIncrement;
   printValue('slider1','rangeValue1',angle);
   updateHRTF(angle);
   return angle;
   }
-function printValue(sliderID, textbox, angle)
-  {
+function printValue(sliderID, textbox, angle) {
   var x = document.getElementById(textbox);
   var y = document.getElementById(sliderID);
   x.value = angle;
@@ -109,29 +140,116 @@ function printValue(sliderID, textbox, angle)
   }
 
 
-function updateHRTF(angle)
-  {
+function updateHRTF(angle) {
   // note: you may hear a click when switching.
   // if/when we want to get fancy, we may be able
   // to reduce clicking by slowly changing the
   // contents of the buffer
-  convolver.buffer = data.HRTFs[Math.round(angle/angleIncrement)].buffer;
+  if (convolverIndex==1) {
+    if (DEBUG){console.log('Setting new angle (#1)');}
+    convolverNode1.buffer = data.HRTFs[Math.round(angle/angleIncrement)].buffer;
+    convolverIndex=2;
+    newSource();
+    crossFade();
+    }
+  else {
+    if (DEBUG){console.log('Setting new angle (#2)');}
+    convolverNode2.buffer = data.HRTFs[Math.round(angle/angleIncrement)].buffer;
+    convolverIndex=1;
+    newSource();
+    crossFade();
+    }
   }
 
-function playSound()
-  {
-  if (isPlaying){
-    this.source.stop(0);
-    isPlaying = false;
+function newSource() {
+  if (convolverIndex==1) {
+    if (DEBUG){console.log('New Source 2');}
+    var noiseSourceNode2 = audioContext.createBufferSource();
+  	this.source2 = noiseSourceNode2;
+  	noiseSourceNode2.buffer = noiseBuffer;
+  	noiseSourceNode2.loop = true;
+  	noiseSourceNode2.connect(convolverNode2);
+    noiseSourceNode2.start(0);
+    isPlaying2 = true;
+    }
+  else {
+    if (DEBUG){console.log('New Source 1');}
+    var noiseSourceNode1 = audioContext.createBufferSource();
+  	this.source1 = noiseSourceNode1;
+  	noiseSourceNode1.buffer = noiseBuffer;
+  	noiseSourceNode1.loop = true;
+  	noiseSourceNode1.connect(convolverNode1);
+    noiseSourceNode1.start(0);
+    isPlaying1 = true;
+    }
+}
+
+function playSound() {
+  if (isPlaying1){
+    if (DEBUG){console.log('Stop 1');}
+    this.source1.stop(0);
+    isPlaying1 = false;
+    }
+  else if (isPlaying2) {
+    if (DEBUG){console.log('Stop 2');}
+    this.source2.stop(0);
+    isPlaying2 = false;
     }
   else{
-    var whiteNoiseSource = audioContext.createBufferSource();
-    this.source = whiteNoiseSource;
-	whiteNoiseSource.buffer = noiseBuffer;
-    whiteNoiseSource.loop = true;
-    whiteNoiseSource.connect(convolver);
-    whiteNoiseSource.start(0);
-    isPlaying = true;
+    newSource();
+    }
+  }
+
+function crossFade() {
+  if (convolverIndex==1) {
+    if (DEBUG){console.log('Cross-fading from 1 to 2');}
+    fadeOut(gainNode1);
+    fadeIn(gainNode2);
+    }
+  else {
+    if (DEBUG){console.log('Cross-fading from 2 to 1');}
+    fadeOut(gainNode2);
+    fadeIn(gainNode1);
+    }
+  }
+
+function fadeIn(gainNode) {
+  if (DEBUG){console.log('Fading in');}
+  gainNode.gain.value = 0.0;
+  timerID_fadeIn = setInterval(function () {
+    gainNode.gain.value = Math.min(1.0,gainNode.gain.value+fadeStepSize);
+    cancelFadeInTimer(gainNode);
+    }, fadeTimeConstant);
+  }
+
+function cancelFadeInTimer(gainNode) {
+  if (gainNode.gain.value >= 1.0) {
+    if (DEBUG){console.log('... done fading in (Gain1='+gainNode1.gain.value+') (Gain2='+gainNode2.gain.value+')');}
+    clearInterval(timerID_fadeIn);
+    }
+  }
+
+function fadeOut(gainNode) {
+  if (DEBUG){console.log('Fading out');}
+  gainNode.gain.value = 1.0;
+  timerID_fadeOut = setInterval(function () {
+    gainNode.gain.value = Math.max(0.0,gainNode.gain.value-fadeStepSize);
+    cancelFadeOutTimer(gainNode);
+    }, fadeTimeConstant);
+  }
+
+function cancelFadeOutTimer(gainNode) {
+  if (gainNode.gain.value <= 0.0) {
+    if (DEBUG){console.log('... done fading out (Gain1='+gainNode1.gain.value+') (Gain2='+gainNode2.gain.value+')');}
+    clearInterval(timerID_fadeOut);
+    if (convolverIndex==1 && isPlaying1) {
+      if (DEBUG){console.log('Stop 1');}
+      this.source1.stop(0);
+      }
+    else if (convolverIndex==2 && isPlaying2) {
+      if (DEBUG){console.log('Stop 2');}
+      this.source2.stop(0);
+      }
     }
   }
 
