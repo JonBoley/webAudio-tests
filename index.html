@@ -2,9 +2,12 @@
 <html>
 <head>
 <script>
+var DEBUG = false;
 var angle = 0;
 var angleIncrement = 10; // degrees
-var DEBUG = false;
+var fadeTime = 50; //ms
+var fadeStepSize = 0.1;
+var rotationTimeConstant = 200; //ms
 </script>
 </head>
 <body>
@@ -19,9 +22,7 @@ var DEBUG = false;
 <p>
 <button id="myBtn" onclick="playSound()" type="button">Play/Stop</button>
 <input id="rangeValue1" type="text" size="2" value="0" onchange="setAngle(this.value);"/>&deg;
-<input id="checkAutoRotate" type="checkbox" onchange="doAutoRotation(this.checked);">Auto Rotate
 </p>
-
 
 <p>
 0&deg;
@@ -29,7 +30,18 @@ var DEBUG = false;
 360&deg;
 </p>
 
+<p style="border: 1px solid;">
+<input id="checkAutoRotate" type="checkbox" onchange="doAutoRotation(this.checked);">Auto Rotate<br>
+Cross-fade time:
+<input id="fadeTime" type="text" size="2" onchange="fadeTime=this.value;"/> ms<br>
+New angle every
+<input id="rotationTimeConstant" type="text" size="2"
+onchange="doAutoRotation(false);rotationTimeConstant=this.value;doAutoRotation(document.getElementById('checkAutoRotate').checked);"/> ms
+</p>
+
 <script>
+document.getElementById("fadeTime").value = fadeTime;
+document.getElementById("rotationTimeConstant").value = rotationTimeConstant;
 // disable audio playback until HRTFs have loaded
 document.getElementById("myBtn").disabled = true;
 </script>
@@ -107,12 +119,8 @@ gainNode2.connect(audioContext.destination);
 
 var isPlaying1 = false;
 var isPlaying2 = false;
-var fadeTime = 50; //ms
-var fadeStepSize = 0.1;
-var fadeTimeConstant = fadeTime*fadeStepSize;
 var timerID_rotation, timerID_fadeIn, timerID_fadeOut;
 
-var rotationTimeConstant = 200; //ms
 function doAutoRotation(isEnabled)
   {
   if (isEnabled){
@@ -219,7 +227,7 @@ function fadeIn(gainNode) {
   timerID_fadeIn = setInterval(function () {
     gainNode.gain.value = Math.min(1.0,gainNode.gain.value+fadeStepSize);
     cancelFadeInTimer(gainNode);
-    }, fadeTimeConstant);
+    }, fadeTime*fadeStepSize);
   }
 
 function cancelFadeInTimer(gainNode) {
@@ -235,7 +243,7 @@ function fadeOut(gainNode) {
   timerID_fadeOut = setInterval(function () {
     gainNode.gain.value = Math.max(0.0,gainNode.gain.value-fadeStepSize);
     cancelFadeOutTimer(gainNode);
-    }, fadeTimeConstant);
+    }, fadeTime*fadeStepSize);
   }
 
 function cancelFadeOutTimer(gainNode) {
@@ -245,10 +253,12 @@ function cancelFadeOutTimer(gainNode) {
     if (convolverIndex==1 && isPlaying1) {
       if (DEBUG){console.log('Stop 1');}
       this.source1.stop(0);
+      isPlaying1 = false;
       }
     else if (convolverIndex==2 && isPlaying2) {
       if (DEBUG){console.log('Stop 2');}
       this.source2.stop(0);
+      isPlaying2 = false;
       }
     }
   }
