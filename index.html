@@ -71,12 +71,6 @@ this.source2 = noiseSourceNode2;
 
 if (DEBUG){console.log('2) Fs= '+audioContext.sampleRate);}
 
-//console.log(data);
-
-if (data.samplingRate_Hz != audioContext.sampleRate){
-  console.log('Warning: Sampling rates do not match');
-  }
-
 // load HRTFs
 for(var i_angle = 0; i_angle < data.HRTFs.length; i_angle++){
 	var buffer = audioContext.createBuffer(2, data.samplingRate_Hz, data.samplingRate_Hz);
@@ -88,7 +82,15 @@ for(var i_angle = 0; i_angle < data.HRTFs.length; i_angle++){
 	for(var i_sample = 0; i_sample < data.HRTFs[i_angle].HRIR_right.length; i_sample++){
 		bufferChannelRight[i_sample] = data.HRTFs[i_angle].HRIR_right[i_sample];
 	}
-	data.HRTFs[i_angle].buffer = buffer;
+	data.HRTFs[i_angle].buffer = buffer;    
+}
+
+// resample if needed
+if (data.samplingRate_Hz != audioContext.sampleRate){
+    resampleHRTFs(data.HRTFs,audioContext.sampleRate);
+}
+else{
+    setConvolverBuffers(data.HRTFs[0].buffer); // use first angle
 }
 
 if (DEBUG){console.log('3) Fs= '+audioContext.sampleRate);}
@@ -99,8 +101,13 @@ document.getElementById("myBtn").disabled = false;
 var convolverIndex = 1;
 var convolverNode1 = audioContext.createConvolver();
 var convolverNode2 = audioContext.createConvolver();
-convolverNode1.buffer = data.HRTFs[0].buffer;
-convolverNode2.buffer = data.HRTFs[0].buffer;
+
+function setConvolverBuffers(buffer){
+    convolverNode1.buffer = buffer;
+    convolverNode2.buffer = buffer;
+}
+
+
 
 if (DEBUG){console.log('4) Fs= '+audioContext.sampleRate);}
 
@@ -120,6 +127,67 @@ gainNode2.connect(audioContext.destination);
 var isPlaying1 = false;
 var isPlaying2 = false;
 var timerID_rotation, timerID_fadeIn, timerID_fadeOut;
+
+function resampleHRTFs(HRTFs,targetFs){
+    
+    function setHRTFBuffer(i_angle) {
+        return function (event) {
+
+            var audioBuffer = event.renderedBuffer;            
+            /* audioBuffer contains audio resampled at the current AudioContext rate */
+            /* use audioBuffer.getChannelData(x) to get an ArrayBuffer for channel x. */
+        
+            // overwrite old audio buffer samples
+            for (var iChannel = 0; iChannel < numChannels; iChannel++) {
+                var oldBuf = oldAudioBuffer.getChannelData(iChannel);
+                var newBuf = audioBuffer.getChannelData(iChannel);
+                for (var iSample = 0; iSample < audioBuffer.length; iSample++) {
+                    oldBuf[iSample] = newBuf[iSample];
+                }
+                for (var iSample = audioBuffer.length; iSample < oldAudioBuffer.length; iSample++) {
+                    oldBuf[iSample] = 0; // set any extra samples to zero
+                }
+            }
+            
+            HRTFs[i_angle].buffer = audioBuffer;
+            if (i_angle == 0) {
+                setConvolverBuffers(audioBuffer);
+            }
+        };
+    };
+    
+    
+    for(var i_angle = 0; i_angle < data.HRTFs.length; i_angle++){
+        var oldAudioBuffer = HRTFs[i_angle].buffer;
+        var durationInSamples = oldAudioBuffer.length;
+        var numChannels = oldAudioBuffer.numberOfChannels;
+    
+        /* Get an OfflineAudioContext at the target sample rate. */
+        var offlineContext = new OfflineAudioContext(numChannels, durationInSamples, targetFs);
+
+        /* Get an empty AudioBuffer at the current sample rate */
+        var sourceBuffer = offlineContext.createBuffer(numChannels, durationInSamples, oldAudioBuffer.sampleRate);
+
+        /* Copy your data in the AudioBuffer */
+        for (var iChannel = 0; iChannel < numChannels; iChannel++) {
+            var oldBuf = oldAudioBuffer.getChannelData(iChannel);
+            var newBuf = sourceBuffer.getChannelData(iChannel);
+            for (var iSample = 0; iSample < durationInSamples; iSample++) {
+                newBuf[iSample] = oldBuf[iSample];
+            }
+        }
+
+        /* Play it from the beginning. */
+        var source = offlineContext.createBufferSource();
+        source.buffer = sourceBuffer;
+        source.connect(offlineContext.destination);
+        source.start(0);
+        offlineContext.oncomplete = setHRTFBuffer(i_angle);
+        
+        /* Start rendering as fast as the machine can. */
+        offlineContext.startRendering();
+    } // for (var i_angle = 0; i_angle < data.HRTFs.length; i_angle++)
+} // function resampleHRTFs(HRTFs,targetFs)
 
 function doAutoRotation(isEnabled)
   {
